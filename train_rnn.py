@@ -3,6 +3,7 @@ import math
 import time
 import re
 import random
+import sys
 from collections import Counter
 
 regex2punc = {
@@ -88,7 +89,7 @@ def L2(w):
     lamb = 1e-5
     return lamb * w**2
 
-d = 40
+d = 50
 v = len(VOCAB)
 seq_len = 15
 class Model:
@@ -130,7 +131,7 @@ class Model:
             self.xs.append(x)
             self.h.append(ht)
             ys[t] = y
-            
+
         return ys
 
     def backward(self, yOuts, yLabels):
@@ -180,8 +181,9 @@ rnn = Model()
 smoothing = 0.005
 loss = (1-1/v)**2 + (1/v)**2
 acc = 1/v
-for epoch in range(100):
-    
+n_epochs = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+for epoch in range(n_epochs):
+
     rnn.resetInternal(full=True)
     for count, i in enumerate(range(0, len(data), seq_len)):
         x = data[i:i+seq_len]
@@ -206,7 +208,7 @@ rnn.resetInternal(full=True)
 seed = ['<VERSE_NUM>']
 yOut = rnn.forward(seed)
 print(''.join([token2printable(t) for t in seed]), end=' ')
-for _ in range(10000 - len(seed)):
+for _ in range(1000 - len(seed)):
     idx = np.random.choice(len(VOCAB), p=yOut[-1].ravel())
     c = VOCAB[idx]
     print(token2printable(c), end='')
