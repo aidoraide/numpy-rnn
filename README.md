@@ -1,6 +1,6 @@
 # Basic RNN
 
-This is pretty simple, just run `python train_rnn.py` to train the RNN and see what it spits out.
+This is pretty simple, just run `python train_rnn.py` to train the RNN and see what it spits out. It uses The Bible as training data and tries to predict the next word that occurs.
 
 ## Silly examples of the networks output
 
