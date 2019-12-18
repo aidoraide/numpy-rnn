@@ -4,7 +4,11 @@ import time
 import re
 import random
 import sys
+import os
+import pickle
 from collections import Counter
+
+model_path = os.path.join(os.path.dirname(__file__), 'model.pk')
 
 regex2punc = {
     r';': ' ; ',
@@ -14,24 +18,25 @@ regex2punc = {
     r'\?': ' ? ',
     r'!': ' ! ',
     r'\*': '',
+    r'\(': ' ( ',
+    r'\)': ' ) ',
 }
-data = open('bible.txt').read().lower()
-data = data.split('End of the Project Gutenberg EBook of The King James Bible'.lower())[0] # cut out copyright
-data = re.sub(r'[0-9]+:[0-9]+', ' <VERSE_NUM> ', data) # replace verse nums with tokens
-# data = re.sub(r'\n\n', ' <NEW_LINE> ', data) # make double newlines a token
-data = re.sub(r'\n', ' ', data) # remove single newlines
-data = re.sub(r'\(.*\)', ' ', data) # remove brackets and anything inside
-for regex, punc in regex2punc.items():
-    data = re.sub(regex, punc, data)
-data = [token for token in data.split(' ') if token != '']
+def tokenize(data):
+    data = data.lower()
+    data = re.sub(r'[0-9]+:[0-9]+', ' <VERSE_NUM> ', data) # replace verse nums with tokens
+    # data = re.sub(r'\n\n', ' <NEW_LINE> ', data) # make double newlines a token
+    data = re.sub(r'\n', ' ', data) # remove single newlines
+    # data = re.sub(r'\(.*\)', ' ', data) # remove brackets and anything inside
+    for regex, punc in regex2punc.items():
+        data = re.sub(regex, punc, data)
+    tokens = [token for token in data.split(' ') if token != '']
+    return tokens
 
+data = open('bible.txt').read()
+data = data.split('End of the Project Gutenberg EBook of The King James Bible')[0] # cut out copyright
+data = tokenize(data)
 # counter = Counter(data)
 # data = [token if counter[token] > 1 else '<RARE>' for token in data]
-
-# for i, c in enumerate(sorted(VOCAB, key=lambda c: counter[c])):
-#     print(f"{c:15}: {counter[c]*100/len(data):5.2f}%")
-
-
 VOCAB = sorted(list(set(data)))
 c2i = {c:i for i, c in enumerate(VOCAB)}
 i2c = VOCAB
@@ -91,7 +96,7 @@ def L2(w):
 
 d = 50
 v = len(VOCAB)
-seq_len = 15
+seq_len = 50
 class Model:
     def __init__(self):
         # Each char has a d x 1 vector
@@ -176,41 +181,49 @@ class Model:
             m += dw * dw
             w -= learning_rate * dw / (np.sqrt(m + 1e-8))
 
-rnn = Model()
+if __name__ == '__main__':
+    # counter = Counter(data)
+    # for i, c in enumerate(sorted(VOCAB, key=lambda c: counter[c])):
+    #     print(f"{c:15}: {counter[c]*100/len(data):5.2f}% {counter[c]}")
+    # print('(d, v) =', (d, v))
 
-smoothing = 0.005
-loss = (1-1/v)**2 + (1/v)**2
-acc = 1/v
-n_epochs = int(sys.argv[1]) if len(sys.argv) > 1 else 5
-for epoch in range(n_epochs):
+    rnn = Model()
+
+    smoothing = 0.005
+    loss = (1-1/v)**2 + (v-1)*(1/v)**2
+    acc = 1/v
+    n_epochs = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    for epoch in range(n_epochs):
+
+        rnn.resetInternal(full=True)
+        for count, i in enumerate(range(0, len(data), seq_len)):
+            x = data[i:i+seq_len]
+            y = data[i+1:i+seq_len+1]
+            x = x[:len(y)]
+
+            yOut = rnn.forward(x)
+            l = rnn.loss(yOut, y) / len(y)
+            acc = sum([getPredictedChar(yOut[t]) == y[t] for t in range(len(y))])/len(y) * smoothing + (1-smoothing) * acc
+            loss = l * smoothing + (1 - smoothing) * loss
+            g = rnn.backward(yOut, y)
+            gu = np.absolute(np.concatenate([gw.flatten() for gw in g])).mean()
+            gstd = np.std(np.concatenate([gw.flatten() for gw in g]))
+            if count % 10 == 0:
+                print(f'epoch {epoch+i/len(data):6.2f} loss {loss:10.4f} {acc*100:6.2f}%', end='\r')
+            rnn.step(1e-1, *g)
+            rnn.resetInternal()
+
+        print(f'epoch {epoch+1:6} loss {loss:10.4f} {acc*100:6.2f}%')
 
     rnn.resetInternal(full=True)
-    for count, i in enumerate(range(0, len(data), seq_len)):
-        x = data[i:i+seq_len]
-        y = data[i+1:i+seq_len+1]
-        x = x[:len(y)]
-
-        yOut = rnn.forward(x)
-        l = rnn.loss(yOut, y) / len(y)
-        acc = sum([getPredictedChar(yOut[t]) == y[t] for t in range(len(y))])/len(y) * smoothing + (1-smoothing) * acc
-        loss = l * smoothing + (1 - smoothing) * loss
-        g = rnn.backward(yOut, y)
-        gu = np.absolute(np.concatenate([gw.flatten() for gw in g])).mean()
-        gstd = np.std(np.concatenate([gw.flatten() for gw in g]))
-        if count % 100 == 0:
-            print(f'epoch {epoch+i/len(data):6.2f} loss {loss:10.4f} {acc*100:6.2f}%', end='\r')
-        rnn.step(1e-1, *g)
-        rnn.resetInternal()
-
-    print(f'epoch {epoch+1:6} loss {loss:10.4f} {acc*100:6.2f}%')
-
-rnn.resetInternal(full=True)
-seed = ['<VERSE_NUM>']
-yOut = rnn.forward(seed)
-print(''.join([token2printable(t) for t in seed]), end=' ')
-for _ in range(1000 - len(seed)):
-    idx = np.random.choice(len(VOCAB), p=yOut[-1].ravel())
-    c = VOCAB[idx]
-    print(token2printable(c), end='')
-    yOut = rnn.forward([c])
-print()
+    with open(model_path, 'wb') as f:
+        pickle.dump(rnn, f)
+    seed = ['<VERSE_NUM>']
+    yOut = rnn.forward(seed)
+    print(''.join([token2printable(t) for t in seed]), end=' ')
+    for _ in range(10000 - len(seed)):
+        idx = np.random.choice(len(VOCAB), p=yOut[-1].ravel())
+        c = VOCAB[idx]
+        print(token2printable(c), end='')
+        yOut = rnn.forward([c])
+    print()
