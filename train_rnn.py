@@ -15,7 +15,7 @@ regex2punc = {
     r'\*': '',
 }
 data = open('bible.txt').read().lower()
-data = data.split('End of the Project Gutenberg EBook of The King James Bible')[0] # cut out copyright
+data = data.split('End of the Project Gutenberg EBook of The King James Bible'.lower())[0] # cut out copyright
 data = re.sub(r'[0-9]+:[0-9]+', ' <VERSE_NUM> ', data) # replace verse nums with tokens
 # data = re.sub(r'\n\n', ' <NEW_LINE> ', data) # make double newlines a token
 data = re.sub(r'\n', ' ', data) # remove single newlines
@@ -180,7 +180,7 @@ rnn = Model()
 smoothing = 0.005
 loss = (1-1/v)**2 + (1/v)**2
 acc = 1/v
-for epoch in range(50):
+for epoch in range(100):
     
     rnn.resetInternal(full=True)
     for count, i in enumerate(range(0, len(data), seq_len)):
